@@ -2,6 +2,6 @@
 *.png
 *.gz
 *.docx
-*.json
+# *.json
 
 .venv
