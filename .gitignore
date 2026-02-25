@@ -3,3 +3,5 @@
 *.gz
 *.docx
 *.json
+
+.venv
