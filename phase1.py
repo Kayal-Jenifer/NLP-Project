@@ -99,3 +99,108 @@ plt.title("Distribution of Reviews per User")
 plt.xlabel("Number of Reviews")
 plt.ylabel("Number of Users")
 plt.show()
+
+print("\n#################################### Review lengths and outliers #######################################")
+
+# Create review length column (word count)
+df['reviewText'] = df['reviewText'].fillna('')
+df['review_length'] = df['reviewText'].apply(lambda x: len(x.split()))
+
+print("\nReview Length Statistics:")
+print(df['review_length'].describe())
+
+# Plot review length distribution
+plt.figure()
+plt.hist(df['review_length'][df['review_length'] < 100], bins=30)
+plt.title("Distribution of Review Length")
+plt.xlabel("Number of Words")
+plt.ylabel("Frequency")
+plt.show()
+
+print("\n############################### Analyze lengths (short vs long reviews) #################################")
+
+# Show shortest reviews
+print("\nShortest reviews:")
+print(df.sort_values(by='review_length').head(5)[['reviewText', 'review_length']])
+
+# Show longest reviews
+print("\nLongest reviews:")
+print(df.sort_values(by='review_length', ascending=False).head(5)[['reviewText', 'review_length']])
+
+# Length of avg reviews vs. rating boxplot to see if higher rated view seem to be longer 
+plt.figure(figsize=(9, 5))
+df_plot = df[df['review_length'] < 500]  # cap outliers for readability
+groups = [df_plot[df_plot['overall'] == r]['review_length'].values for r in [1, 2, 3, 4, 5]]
+bp = plt.boxplot(groups, patch_artist=True, labels=['1 ', '2 ', '3 ', '4 ', '5 '])
+box_colors = ['#d73027', '#f46d43', '#fee08b', '#a6d96a', '#1a9850']
+for patch, color in zip(bp['boxes'], box_colors):
+    patch.set_facecolor(color)
+    patch.set_alpha(0.8)
+plt.title("Length of reviw vs. rating given by user", fontsize=14, fontweight='bold')
+plt.xlabel("Star rating")
+plt.ylabel("Review length (words)")
+plt.tight_layout()
+plt.show()
+
+print("\n#################################### Check for duplicates ################################################")
+
+print("\nTotal number of reviews:", total_reviews)
+
+# Check full row duplicates
+duplicate_rows = df.duplicated(subset=['reviewerID', 'asin', 'reviewText', 'overall']).sum()
+print("Number of duplicate reviews:", duplicate_rows)
+
+# Remove full duplicates
+df = df.drop_duplicates(subset=['reviewerID', 'asin', 'reviewText', 'overall'])
+print("Number of review after removing duplicates:", df.shape)
+
+# Remove empty reviews
+df = df[df['review_length'] > 0]
+print("Dataset shape after removing empty reviews:", df.shape)
+
+# Number of review text repeated across different reviews
+duplicate_review_texts = df['reviewText'].duplicated().sum()
+print("Number of reviews with duplicate review text:", duplicate_review_texts)
+
+print("\n######################################### Label data based on rating #########################################")
+
+# Create a function to map ratings to sentiment labels
+def label_sentiment(rating):
+    if rating >= 4:
+        return "Positive"
+    elif rating == 3:
+        return "Neutral"
+    else:
+        return "Negative"
+
+# Apply labeling function to the 'overall' rating column
+df['sentiment_label'] = df['overall'].apply(label_sentiment)
+
+# Display first few labeled rows
+print("\nSample labeled data:")
+print(df[['overall', 'sentiment_label']].head())
+
+# Check distribution of sentiment labels
+print("\nSentiment Label Distribution:")
+print(df['sentiment_label'].value_counts())
+
+# Sentiment pie chart
+sentiment_counts = df['sentiment_label'].value_counts()
+colors_pie = {'Positive': '#2ecc71', 'Neutral': '#f39c12', 'Negative': '#e74c3c'}
+pie_colors = [colors_pie[label] for label in sentiment_counts.index]
+
+plt.figure(figsize=(7, 7))
+wedges, texts, autotexts = plt.pie(
+    sentiment_counts.values,
+    labels=sentiment_counts.index,
+    autopct='%1.1f%%',
+    colors=pie_colors,
+    startangle=140,
+    wedgeprops={'edgecolor': 'white', 'linewidth': 2}
+)
+for text in autotexts:
+    text.set_fontsize(12)
+    text.set_fontweight('bold')
+plt.title("Sentiment Label Distribution", fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.show()
