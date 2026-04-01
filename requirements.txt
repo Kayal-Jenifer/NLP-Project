@@ -1,8 +1,7 @@
 pandas
 numpy
-matplotlib
 seaborn
-nltk
-vaderSentiment
+matplotlib
 textblob
+vaderSentiment
 scikit-learn
