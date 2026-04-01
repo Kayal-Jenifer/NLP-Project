@@ -204,3 +204,82 @@ for text in autotexts:
 plt.title("Sentiment Label Distribution", fontsize=14, fontweight='bold')
 plt.tight_layout()
 plt.show()
+
+print("\n#################################### Select columns to analyze sentiment ###################################")
+
+# Combine reviewText and summary 
+df['summary'] = df['summary'].fillna('')
+df['reviewText'] = df['reviewText'].fillna('')
+
+# Create a new column combining summary + reviewText
+df['combined_text'] = df['summary'] + " " + df['reviewText']
+
+# Select only required columns for sentiment analysis
+sentiment_df = df[['combined_text', 'sentiment_label']]
+
+print("\nSelected columns for sentiment analysis:")
+print(sentiment_df.head())
+
+print("\n#################################### Check for outliers ########################################")
+
+# Identify extremely long reviews (example threshold: > 1000 words)
+long_reviews = df[df['review_length'] > 1000]
+print("\nNumber of extremely long reviews (>1000 words):", long_reviews.shape[0])
+
+# Identify empty reviews
+empty_reviews = df[df['review_length'] == 0]
+print("Number of empty reviews:", empty_reviews.shape[0])
+
+duplicate_rows_after = df.duplicated(subset=['reviewerID', 'asin', 'reviewText', 'overall']).sum()
+print("Number of duplicate reviews:", duplicate_rows_after)
+
+print("\n#################################### Text preprocessing ########################################\n")
+
+# Remove HTML tags
+df['combined_text'] = df['combined_text'].apply(lambda x: re.sub(r'<.*?>', '', x))
+
+# Remove excessive whitespaces
+df['combined_text'] = df['combined_text'].apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+
+print(df['combined_text'].head())
+
+# Check for emojis in reviews
+emoji_pattern = re.compile(r'[^\x00-\x7F]+')
+
+df['contains_emoji'] = df['combined_text'].apply(lambda x: bool(emoji_pattern.search(str(x))))
+emoji_reviews = df[df['contains_emoji'] == True]
+
+print("\nNumber of reviews containing emojis:", len(emoji_reviews))
+print("\nSample emoji reviews:")
+print(emoji_reviews['combined_text'].head(5))
+
+# Check for capitalized words in reviews 
+def has_caps(text):
+    words = str(text).split()
+    return any(word.isupper() and len(word) > 2 for word in words)
+
+df['contains_caps'] = df['combined_text'].apply(has_caps)
+
+caps_reviews = df[df['contains_caps']]
+
+print("\nNumber of reviews containing ALL CAPS words:", len(caps_reviews))
+print("\nSample capitalization reviews:")
+print(caps_reviews['combined_text'].head(5))
+
+# Check for exclamations in reviews
+df['contains_exclamation'] = df['combined_text'].apply(lambda x: '!' in str(x))
+exclamation_reviews = df[df['contains_exclamation']]
+
+print("\nNumber of reviews containing exclamations:", len(exclamation_reviews))
+print("\nSample exclamation reviews:")
+print(exclamation_reviews['combined_text'].head(5))
+
+print("\n#################################### Model Building Setup ########################################")
+
+# Replace any missing text values (NaN) with an empty string.
+# This prevents errors when applying sentiment models (VADER/TextBlob),
+# because they cannot process NaN values.
+df['combined_text'] = df['combined_text'].fillna('')
+
+# Remove empty rows
+df = df[df['combined_text'].str.len() > 0]
