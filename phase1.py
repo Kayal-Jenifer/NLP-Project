@@ -337,3 +337,237 @@ print("\n========== TextBlob Results ==========")
 print("Accuracy:", accuracy_score(y_true, sample_df['pred_textblob']))
 print(confusion_matrix(y_true, sample_df['pred_textblob'], labels=["Negative", "Neutral", "Positive"]))
 print(classification_report(y_true, sample_df['pred_textblob']))
+
+comparison_table = pd.DataFrame({
+    "Model": ["VADER (VADR)", "TextBlob"],
+    "Accuracy": [
+        accuracy_score(y_true, sample_df['pred_vader']),
+        accuracy_score(y_true, sample_df['pred_textblob'])
+    ]
+})
+
+print(comparison_table)
+
+# Bar plot comparing accuracies
+plt.figure(figsize=(10, 6))
+models = comparison_table['Model']
+accuracies = comparison_table['Accuracy']
+
+bars = plt.bar(models, accuracies, color=['#1f77b4', '#2ca02c'], alpha=0.8, edgecolor='black')
+plt.ylabel('Accuracy', fontsize=12)
+plt.xlabel('Model', fontsize=12)
+plt.title('Model Accuracy Comparison: VADER vs TextBlob', fontsize=14, fontweight='bold')
+plt.ylim(0, 1)
+plt.grid(axis='y', alpha=0.3, linestyle='--')
+
+# Add accuracy values on top of bars
+for bar, acc in zip(bars, accuracies):
+    height = bar.get_height()
+    plt.text(bar.get_x() + bar.get_width()/2., height,
+             f'{acc:.4f}',
+             ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+# VADER Confusion Matrix
+cm_vader = confusion_matrix(y_true, sample_df['pred_vader'], labels=["Negative", "Neutral", "Positive"])
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm_vader, annot=True, fmt='d', cmap='Blues', 
+            xticklabels=["Negative", "Neutral", "Positive"],
+            yticklabels=["Negative", "Neutral", "Positive"])
+plt.title('VADER Confusion Matrix')
+plt.ylabel('True Label')
+plt.xlabel('Predicted Label')
+plt.tight_layout()
+plt.show()
+
+# TextBlob Confusion Matrix
+cm_textblob = confusion_matrix(y_true, sample_df['pred_textblob'], labels=["Negative", "Neutral", "Positive"])
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm_textblob, annot=True, fmt='d', cmap='Greens', 
+            xticklabels=["Negative", "Neutral", "Positive"],
+            yticklabels=["Negative", "Neutral", "Positive"])
+plt.title('TextBlob Confusion Matrix')
+plt.ylabel('True Label')
+plt.xlabel('Predicted Label')
+plt.tight_layout()
+plt.show()
+
+print("\n#################################### EXCLAMATION REVIEWS EVALUATION ########################################")
+
+exclam_sample = sample_df[sample_df['contains_exclamation']]
+if not exclam_sample.empty:
+    y_true_exclam = exclam_sample['sentiment_label']
+
+    print(f"\nEvaluating on {len(exclam_sample)}/1000 reviews containing exclamations.")
+
+    print("\n========== VADER (VADR) Results on Exclamation Reviews ==========")
+    print("Accuracy:", accuracy_score(y_true_exclam, exclam_sample['pred_vader']))
+    print("Confusion Matrix:\n", confusion_matrix(y_true_exclam, exclam_sample['pred_vader'], labels=["Negative", "Neutral", "Positive"]))
+    print("\nClassification Report:\n", classification_report(y_true_exclam, exclam_sample['pred_vader'], zero_division=0))
+
+    print("\n========== TextBlob Results on Exclamation Reviews ==========")
+    print("Accuracy:", accuracy_score(y_true_exclam, exclam_sample['pred_textblob']))
+    print("Confusion Matrix:\n", confusion_matrix(y_true_exclam, exclam_sample['pred_textblob'], labels=["Negative", "Neutral", "Positive"]))
+    print("\nClassification Report:\n", classification_report(y_true_exclam, exclam_sample['pred_textblob'], zero_division=0))
+
+    print("\n#################################### Comparison Table (Exclamations) ########################################\n")
+    comparison_table_exclam = pd.DataFrame({
+        "Model": ["VADER (VADR)", "TextBlob"],
+        "Accuracy (Exclamations)": [
+            accuracy_score(y_true_exclam, exclam_sample['pred_vader']),
+            accuracy_score(y_true_exclam, exclam_sample['pred_textblob'])
+        ]
+    })
+    print(comparison_table_exclam)
+else:
+    print("\nNo exclamation reviews found in the sample.")
+    
+if 'comparison_table_exclam' in locals():
+    # Bar plot comparing accuracies on exclamation reviews
+    plt.figure(figsize=(10, 6))
+    models_exclam = comparison_table_exclam['Model']
+    accuracies_exclam = comparison_table_exclam['Accuracy (Exclamations)']
+
+    bars_exclam = plt.bar(models_exclam, accuracies_exclam, color=['#9467bd', '#8c564b'], alpha=0.8, edgecolor='black')
+    plt.ylabel('Accuracy', fontsize=12)
+    plt.xlabel('Model', fontsize=12)
+    plt.title('Model Accuracy Comparison (Exclamation Reviews): VADER vs TextBlob', fontsize=14, fontweight='bold')
+    plt.ylim(0, 1)
+    plt.grid(axis='y', alpha=0.3, linestyle='--')
+    
+    print("\nExclamation reviews accuracy comparison:")
+    print(comparison_table_exclam)
+
+    # Add accuracy values on top of bars
+    for bar, acc in zip(bars_exclam, accuracies_exclam):
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height,
+                 f'{acc:.4f}',
+                 ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+    plt.tight_layout()
+    plt.show()
+
+print("\n#################################### ALL CAPS REVIEWS EVALUATION ########################################")
+
+caps_sample = sample_df[sample_df['contains_caps']]
+if not caps_sample.empty:
+    y_true_caps = caps_sample['sentiment_label']
+
+    print(f"\nEvaluating on {len(caps_sample)}/1000 reviews containing ALL CAPS words.")
+
+    print("\n========== VADER (VADR) Results on ALL CAPS Reviews ==========")
+    print("Accuracy:", accuracy_score(y_true_caps, caps_sample['pred_vader']))
+    print("Confusion Matrix:\n", confusion_matrix(y_true_caps, caps_sample['pred_vader'], labels=["Negative", "Neutral", "Positive"]))
+    print("\nClassification Report:\n", classification_report(y_true_caps, caps_sample['pred_vader'], zero_division=0))
+
+    print("\n========== TextBlob Results on ALL CAPS Reviews ==========")
+    print("Accuracy:", accuracy_score(y_true_caps, caps_sample['pred_textblob']))
+    print("Confusion Matrix:\n", confusion_matrix(y_true_caps, caps_sample['pred_textblob'], labels=["Negative", "Neutral", "Positive"]))
+    print("\nClassification Report:\n", classification_report(y_true_caps, caps_sample['pred_textblob'], zero_division=0))
+
+    print("\n#################################### Comparison Table (ALL CAPS) ########################################\n")
+    comparison_table_caps = pd.DataFrame({
+        "Model": ["VADER (VADR)", "TextBlob"],
+        "Accuracy (Caps)": [
+            accuracy_score(y_true_caps, caps_sample['pred_vader']),
+            accuracy_score(y_true_caps, caps_sample['pred_textblob'])
+        ]
+    })
+    print(comparison_table_caps)
+else:
+    print("\nNo ALL CAPS reviews found in the sample.")
+    
+if 'comparison_table_caps' in locals():
+    # Bar plot comparing accuracies on caps reviews
+    plt.figure(figsize=(10, 6))
+    models_caps = comparison_table_caps['Model']
+    accuracies_caps = comparison_table_caps['Accuracy (Caps)']
+
+    bars_caps = plt.bar(models_caps, accuracies_caps, color=['#d62728', '#9467bd'], alpha=0.8, edgecolor='black')
+    plt.ylabel('Accuracy', fontsize=12)
+    plt.xlabel('Model', fontsize=12)
+    plt.title('Model Accuracy Comparison (ALL CAPS Reviews): VADER vs TextBlob', fontsize=14, fontweight='bold')
+    plt.ylim(0, 1)
+    plt.grid(axis='y', alpha=0.3, linestyle='--')
+
+    # Add accuracy values on top of bars
+    for bar, acc in zip(bars_caps, accuracies_caps):
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height,
+                 f'{acc:.4f}',
+                 ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+    plt.tight_layout()
+    plt.show()
+
+# Visualization of precision, recall, and F1-score
+from sklearn.metrics import precision_recall_fscore_support
+
+labels_order = ["Negative", "Neutral", "Positive"]
+
+vader_p, vader_r, vader_f, _ = precision_recall_fscore_support(
+    y_true, sample_df['pred_vader'], labels=labels_order)
+textblob_p, textblob_r, textblob_f, _ = precision_recall_fscore_support(
+    y_true, sample_df['pred_textblob'], labels=labels_order)
+
+x = np.arange(len(labels_order))
+width = 0.13
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
+
+for ax, model_name, p, r, f in zip(
+    axes,
+    ['VADER', 'TextBlob'],
+    [vader_p, textblob_p],
+    [vader_r, textblob_r],
+    [vader_f, textblob_f]
+):
+    b1 = ax.bar(x - width, p, width, label='Precision', color='#3498db', edgecolor='black')
+    b2 = ax.bar(x,         r, width, label='Recall',    color='#2ecc71', edgecolor='black')
+    b3 = ax.bar(x + width, f, width, label='F1-Score',  color='#e74c3c', edgecolor='black')
+    ax.set_title(f"{model_name} — Precision / Recall / F1", fontsize=12, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels_order)
+    ax.set_ylim(0, 1.1)
+    ax.set_ylabel("Score")
+    ax.legend()
+    for bar_group in [b1, b2, b3]:
+        for bar in bar_group:
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                    f"{bar.get_height():.2f}", ha='center', va='bottom', fontsize=8)
+
+plt.suptitle("Precision, recall & F1 by sentiment class", fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.show()
+
+# Misclassification analysis to see where vader and textblob struggle most
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+for ax, model_name, preds in zip(
+    axes,
+    ['VADER', 'TextBlob'],
+    [sample_df['pred_vader'], sample_df['pred_textblob']]
+):
+    misclassified = sample_df[preds != y_true]
+    misclass_counts = misclassified['sentiment_label'].value_counts().reindex(
+        ["Negative", "Neutral", "Positive"], fill_value=0)
+    total_counts = y_true.value_counts().reindex(
+        ["Negative", "Neutral", "Positive"], fill_value=0)
+    misclass_pct = (misclass_counts / total_counts * 100).fillna(0)
+
+    bars = ax.bar(misclass_pct.index, misclass_pct.values,
+                  color=['#e74c3c', '#f39c12', '#2ecc71'], edgecolor='black')
+    for bar, pct in zip(bars, misclass_pct.values):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                f"{pct:.1f}%", ha='center', va='bottom', fontsize=11, fontweight='bold')
+    ax.set_title(f"{model_name} — % Misclassified by True Label", fontsize=12, fontweight='bold')
+    ax.set_xlabel("True sentiment label")
+    ax.set_ylabel("% of Class misclassified")
+    ax.set_ylim(0, 100)
+
+plt.suptitle("Misclassification analysis by sentiment class", fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.show()
