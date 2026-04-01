@@ -283,3 +283,57 @@ df['combined_text'] = df['combined_text'].fillna('')
 
 # Remove empty rows
 df = df[df['combined_text'].str.len() > 0]
+
+print("\n#################################### Randomly Select 1000 Reviews ########################################\n")
+
+sample_df = df.sample(n=min(1000, len(df)), random_state=42).copy()
+print("Sample shape:", sample_df.shape)
+
+print("\n#################################### VADER (VADR) MODEL ########################################")
+
+analyzer = SentimentIntensityAnalyzer()
+
+def vader_predict(text):
+    scores = analyzer.polarity_scores(text)
+    compound = scores['compound']
+    if compound >= 0.05:
+        return "Positive"
+    elif compound <= -0.05:
+        return "Negative"
+    else:
+        return "Neutral"
+
+sample_df['pred_vader'] = sample_df['combined_text'].apply(vader_predict)
+
+print("\nSample predictions from VADER:")
+print(sample_df[['combined_text', 'pred_vader']].head())
+
+print("\n#################################### TEXTBLOB MODEL ########################################")
+
+def textblob_predict(text):
+    polarity = TextBlob(text).sentiment.polarity
+    if polarity > 0.05:
+        return "Positive"
+    elif polarity < -0.05:
+        return "Negative"
+    else:
+        return "Neutral"
+
+sample_df['pred_textblob'] = sample_df['combined_text'].apply(textblob_predict)
+
+print("\nSample predictions from TextBlob:")
+print(sample_df[['combined_text', 'pred_textblob']].head())
+
+print("\n#################################### MODEL EVALUATION ########################################")
+
+y_true = sample_df['sentiment_label']
+
+print("\n========== VADER (VADR) Results ==========")
+print("Accuracy:", accuracy_score(y_true, sample_df['pred_vader']))
+print(confusion_matrix(y_true, sample_df['pred_vader'], labels=["Negative", "Neutral", "Positive"]))
+print(classification_report(y_true, sample_df['pred_vader']))
+
+print("\n========== TextBlob Results ==========")
+print("Accuracy:", accuracy_score(y_true, sample_df['pred_textblob']))
+print(confusion_matrix(y_true, sample_df['pred_textblob'], labels=["Negative", "Neutral", "Positive"]))
+print(classification_report(y_true, sample_df['pred_textblob']))
