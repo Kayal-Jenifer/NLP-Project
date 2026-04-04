@@ -590,6 +590,13 @@ ml_df['review_length'] = ml_df['combined_text'].apply(lambda x: len(x.split()))
 print("\nReview length stats (subset):")
 print(ml_df['review_length'].describe())
 
+# how many reviews get cut off at 150 words (trying to seperate the short reviews from the long ones )
+cutoff = 150
+total = len(ml_df)
+cut = (ml_df['review_length'] >= cutoff).sum()
+print(f"\nReviews >= {cutoff} words (excluded from histogram): {cut} ({cut/total*100:.1f}%)")
+
+
 # visual
 plt.figure()
 plt.hist(ml_df['review_length'][ml_df['review_length'] < 200], bins=30)
@@ -600,14 +607,21 @@ plt.show()
 
 print("\n#################################### q.11 preprocessing ########################################\n")
 
+from nltk.stem import WordNetLemmatizer
+lemmatizer = WordNetLemmatizer()
+text = ' '.join([lemmatizer.lemmatize(w) for w in text.split()])
+
 def clean_text(text):
     text = text.lower()  # putting everything into lower case
     text = re.sub(r'http\S+', '', text)  # removing URLs
     text = re.sub(r'[^a-z\s]', '', text)  # removing punctuation & numbers
     text = re.sub(r'\s+', ' ', text).strip()  # removing all extra spaces
+    text = ' '.join([lemmatizer.lemmatize(w) for w in text.split()])  # lemmatizing to reduce model thinking similar words have its own meaning.
     return text #didnt include stop words because its important as it helps figure out sentiments more accurately
 
+
 ml_df['clean_text'] = ml_df['combined_text'].apply(clean_text)
+
 
 print("\nSample cleaned text:")
 print(ml_df[['combined_text', 'clean_text']].head())
