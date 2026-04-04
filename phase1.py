@@ -571,3 +571,58 @@ for ax, model_name, preds in zip(
 plt.suptitle("Misclassification analysis by sentiment class", fontsize=14, fontweight='bold')
 plt.tight_layout()
 plt.show()
+
+
+print("\n#################################### q.11. subset & exploration ########################################\n")
+
+# 2000 subset 
+ml_df = df.sample(n=min(2000, len(df)), random_state=92).copy()
+
+print("2000 review subset:", ml_df.shape)
+
+# exploring the data 
+print("\nSentiment distribution:")
+print(ml_df['sentiment_label'].value_counts())
+
+# review length 
+ml_df['review_length'] = ml_df['combined_text'].apply(lambda x: len(x.split()))
+
+print("\nReview length stats (subset):")
+print(ml_df['review_length'].describe())
+
+# Plot
+plt.figure()
+plt.hist(ml_df['review_length'][ml_df['review_length'] < 200], bins=30)
+plt.title("Length Distribution of Subset")
+plt.xlabel("Words")
+plt.ylabel("Frequency")
+plt.show()
+
+print("\n#################################### q.11 preprocessing ########################################\n")
+
+def clean_text(text):
+    text = text.lower()  # normalize case
+    text = re.sub(r'http\S+', '', text)  # remove URLs
+    text = re.sub(r'[^a-z\s]', '', text)  # remove punctuation & numbers
+    text = re.sub(r'\s+', ' ', text).strip()  # remove extra spaces
+    return text #didnt include stop words because its importnt as iit helps figure out sentiments 
+
+ml_df['clean_text'] = ml_df['combined_text'].apply(clean_text)
+
+print("\nSample cleaned text:")
+print(ml_df[['combined_text', 'clean_text']].head())
+
+print("\n#################################### q.11 text represenatations ########################################\n")
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+tfidf = TfidfVectorizer(
+    
+    max_features=5000,   # limit features
+)
+
+X = tfidf.fit_transform(ml_df['clean_text'])
+
+y = ml_df['sentiment_label']
+
+print("TF-IDF matrix shape:", X.shape)
