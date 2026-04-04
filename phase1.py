@@ -618,7 +618,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 tfidf = TfidfVectorizer(
 
-    max_features=5000, 
+    max_features=5000, #only a 2000 review subset.. made it 5000 so its big enough to not lose or mis out on important words 
 )
 
 X = tfidf.fit_transform(ml_df['clean_text'])
