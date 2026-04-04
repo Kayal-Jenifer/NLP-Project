@@ -580,7 +580,7 @@ ml_df = df.sample(n=min(2000, len(df)), random_state=92).copy()
 
 print("2000 review subset:", ml_df.shape)
 
-# exploring the data 
+# exploring data 
 print("\nSentiment distribution:")
 print(ml_df['sentiment_label'].value_counts())
 
@@ -590,7 +590,7 @@ ml_df['review_length'] = ml_df['combined_text'].apply(lambda x: len(x.split()))
 print("\nReview length stats (subset):")
 print(ml_df['review_length'].describe())
 
-# Plot
+# visual
 plt.figure()
 plt.hist(ml_df['review_length'][ml_df['review_length'] < 200], bins=30)
 plt.title("Length Distribution of Subset")
@@ -601,11 +601,11 @@ plt.show()
 print("\n#################################### q.11 preprocessing ########################################\n")
 
 def clean_text(text):
-    text = text.lower()  # normalize case
-    text = re.sub(r'http\S+', '', text)  # remove URLs
-    text = re.sub(r'[^a-z\s]', '', text)  # remove punctuation & numbers
-    text = re.sub(r'\s+', ' ', text).strip()  # remove extra spaces
-    return text #didnt include stop words because its importnt as iit helps figure out sentiments 
+    text = text.lower()  # putting everything into lower case
+    text = re.sub(r'http\S+', '', text)  # removing URLs
+    text = re.sub(r'[^a-z\s]', '', text)  # removing punctuation & numbers
+    text = re.sub(r'\s+', ' ', text).strip()  # removing all extra spaces
+    return text #didnt include stop words because its important as it helps figure out sentiments more accurately
 
 ml_df['clean_text'] = ml_df['combined_text'].apply(clean_text)
 
@@ -617,8 +617,8 @@ print("\n#################################### q.11 text represenatations #######
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 tfidf = TfidfVectorizer(
-    
-    max_features=5000,   # limit features
+
+    max_features=5000, 
 )
 
 X = tfidf.fit_transform(ml_df['clean_text'])
