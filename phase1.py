@@ -8,6 +8,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from textblob import TextBlob
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import warnings
 
@@ -609,7 +611,6 @@ print("\n#################################### q.11 preprocessing ###############
 
 from nltk.stem import WordNetLemmatizer
 lemmatizer = WordNetLemmatizer()
-text = ' '.join([lemmatizer.lemmatize(w) for w in text.split()])
 
 def clean_text(text):
     text = text.lower()  # putting everything into lower case
@@ -640,3 +641,101 @@ X = tfidf.fit_transform(ml_df['clean_text'])
 y = ml_df['sentiment_label']
 
 print("TF-IDF matrix shape:", X.shape)
+
+print("\n#################################### q.11d. train/test split ########################################\n")
+
+from sklearn.model_selection import train_test_split
+
+# stratify on rating value (overall), not sentiment_label, as instructed
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y,
+    test_size=0.30,
+    random_state=92,
+    stratify=ml_df['overall']   # stratified on the raw rating field (1-5)
+)
+
+print(f"Training set size: {X_train.shape[0]}")
+print(f"Test set size:     {X_test.shape[0]}")
+print("\nTraining label distribution:")
+print(y_train.value_counts())
+print("\nTest label distribution:")
+print(y_test.value_counts())
+
+print("\n#################################### q.11e. model 1 — Logistic Regression ########################################\n")
+
+
+# fine-tune C (regularization strength)
+lr_params = {'C': [0.1, 1, 10], 'max_iter': [1000]}
+lr_grid = GridSearchCV(LogisticRegression(random_state=92), lr_params, cv=5, scoring='f1_macro', n_jobs=-1)
+lr_grid.fit(X_train, y_train)
+
+best_lr = lr_grid.best_estimator_
+print("Best LR params:", lr_grid.best_params_)
+
+lr_pred = best_lr.predict(X_test)
+print("\nLogistic Regression Accuracy:", accuracy_score(y_test, lr_pred))
+print(classification_report(y_test, lr_pred))
+
+# confusion matrix
+cm_lr = confusion_matrix(y_test, lr_pred, labels=['Positive', 'Neutral', 'Negative'])
+plt.figure()
+sns.heatmap(cm_lr, annot=True, fmt='d',
+            xticklabels=['Positive', 'Neutral', 'Negative'],
+            yticklabels=['Positive', 'Neutral', 'Negative'],
+            cmap='Blues')
+plt.title("Logistic Regression — Confusion Matrix")
+plt.ylabel("True Label")
+plt.xlabel("Predicted Label")
+plt.tight_layout()
+plt.show()
+
+print("\n#################################### q.11e. model 2 — SVM (LinearSVC) ########################################\n")
+
+from sklearn.svm import LinearSVC
+from sklearn.calibration import CalibratedClassifierCV
+
+svm_params = {'estimator__C': [0.1, 1, 10]}
+svm_base = CalibratedClassifierCV(LinearSVC(random_state=92, max_iter=2000, dual='auto'))
+svm_grid = GridSearchCV(svm_base, svm_params, cv=5, scoring='f1_macro', n_jobs=1)
+svm_grid.fit(X_train, y_train)
+
+best_svm = svm_grid.best_estimator_
+print("Best SVM params:", svm_grid.best_params_)
+
+svm_pred = best_svm.predict(X_test)
+print("\nSVM Accuracy:", accuracy_score(y_test, svm_pred))
+print(classification_report(y_test, svm_pred))
+
+# confusion matrix
+cm_svm = confusion_matrix(y_test, svm_pred, labels=['Positive', 'Neutral', 'Negative'])
+plt.figure()
+sns.heatmap(cm_svm, annot=True, fmt='d',
+            xticklabels=['Positive', 'Neutral', 'Negative'],
+            yticklabels=['Positive', 'Neutral', 'Negative'],
+            cmap='Oranges')
+plt.title("SVM — Confusion Matrix")
+plt.ylabel("True Label")
+plt.xlabel("Predicted Label")
+plt.tight_layout()
+plt.show()
+
+print("\n#################################### q.11e. model comparison ########################################\n")
+
+lr_acc  = accuracy_score(y_test, lr_pred)
+svm_acc = accuracy_score(y_test, svm_pred)
+
+models = ['Logistic Regression', 'SVM (LinearSVC)']
+accs   = [lr_acc, svm_acc]
+
+plt.figure()
+plt.bar(models, accs, color=['steelblue', 'darkorange'])
+plt.ylim(0, 1)
+plt.title("Model Accuracy Comparison")
+plt.ylabel("Accuracy")
+for i, v in enumerate(accs):
+    plt.text(i, v + 0.01, f"{v:.3f}", ha='center')
+plt.tight_layout()
+plt.show()
+
+print(f"Logistic Regression accuracy: {lr_acc:.4f}")
+print(f"SVM accuracy:                 {svm_acc:.4f}")
