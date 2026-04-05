@@ -739,3 +739,52 @@ plt.show()
 
 print(f"Logistic Regression accuracy: {lr_acc:.4f}")
 print(f"SVM accuracy:                 {svm_acc:.4f}")
+
+print("\n#################################### q.13 testing on 30% test set ########################################\n")
+
+from sklearn.metrics import precision_score, recall_score, f1_score
+
+labels = ['Positive', 'Neutral', 'Negative']
+
+for model_name, preds in [('Logistic Regression', lr_pred), ('SVM (LinearSVC)', svm_pred)]:
+    print(f"--- {model_name} ---")
+    print(f"Accuracy:  {accuracy_score(y_test, preds):.4f}")
+    print(f"Precision (macro): {precision_score(y_test, preds, average='macro', labels=labels, zero_division=0):.4f}")
+    print(f"Recall    (macro): {recall_score(y_test, preds, average='macro', labels=labels, zero_division=0):.4f}")
+    print(f"F1-Score  (macro): {f1_score(y_test, preds, average='macro', labels=labels, zero_division=0):.4f}")
+    print("\nPer-class breakdown:")
+    print(f"{'Class':<12} {'Precision':>10} {'Recall':>10} {'F1':>10}")
+
+    for label in labels:
+        p = precision_score(y_test, preds, labels=[label], average='macro', zero_division=0)
+        r = recall_score(y_test, preds, labels=[label], average='macro', zero_division=0)
+        f = f1_score(y_test, preds, labels=[label], average='macro', zero_division=0)
+
+        print(f"{label:<12} {p:>10.4f} {r:>10.4f} {f:>10.4f}")
+    print("\nConfusion Matrix (rows=True, cols=Predicted):")
+    cm = confusion_matrix(y_test, preds, labels=labels)
+    print(f"{'':>12} {'Positive':>10} {'Neutral':>10} {'Negative':>10}")
+    
+    for i, label in enumerate(labels):
+        print(f"{label:<12} {cm[i][0]:>10} {cm[i][1]:>10} {cm[i][2]:>10}")
+    print()
+
+    # per-class precision / recall / F1 bar chart
+    p_scores = [precision_score(y_test, preds, labels=[l], average='macro', zero_division=0) for l in labels]
+    r_scores = [recall_score(y_test, preds, labels=[l], average='macro', zero_division=0) for l in labels]
+    f_scores = [f1_score(y_test, preds, labels=[l], average='macro', zero_division=0) for l in labels]
+
+    x = range(len(labels))
+    width = 0.25
+    fig, ax = plt.subplots()
+    ax.bar([i - width for i in x], p_scores, width, label='Precision', color='steelblue')
+    ax.bar(list(x), r_scores, width, label='Recall',    color='darkorange')
+    ax.bar([i + width for i in x], f_scores, width, label='F1-Score',  color='seagreen')
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(labels)
+    ax.set_ylim(0, 1.1)
+    ax.set_ylabel('Score')
+    ax.set_title(f'{model_name} — Per-class Precision / Recall / F1')
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
