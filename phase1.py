@@ -826,3 +826,253 @@ for ax, (model_name, preds), cmap in zip(axes.flat, all_models_q.items(), cmaps_
 plt.suptitle("Confusion Matrices: All 4 Models on Same Test Data (1 000 Reviews)", fontsize=13, fontweight="bold")
 plt.tight_layout()
 plt.show()
+
+from sklearn.metrics import accuracy_score, classification_report, mean_absolute_error, confusion_matrix
+
+# ── 1. Prepare text ───────────────────────────────────────────────────────────
+
+df["reviewText"] = df["reviewText"].fillna("")
+df["summary"]    = df["summary"].fillna("")
+df["combined_text"] = (df["summary"] + " " + df["reviewText"]).str.strip()
+
+# Remove HTML tags & extra spaces (same preprocessing as Phase 1)
+df["combined_text"] = df["combined_text"].apply(lambda x: re.sub(r"<.*?>", "", x))
+df["combined_text"] = df["combined_text"].apply(lambda x: re.sub(r"\s+", " ", x).strip())
+
+# Drop empty rows
+df = df[df["combined_text"].str.len() > 0].copy()
+
+# ── 2. Compute VADER compound score ──────────────────────────────────────────
+
+analyzer = SentimentIntensityAnalyzer()
+
+print("\nComputing VADER scores (this may take a moment)...")
+df["vader_compound"] = df["combined_text"].apply(
+    lambda x: analyzer.polarity_scores(x)["compound"]
+)
+
+# ── 3. Rescale compound score from [−1, +1]  →  [1, 5] ──────────────────────
+#   Formula: sentiment_rating = (compound + 1) / 2 * 4 + 1
+
+df["sentiment_rating"] = (df["vader_compound"] + 1) / 2 * 4 + 1
+df["sentiment_rating"]  = df["sentiment_rating"].clip(1, 5)
+
+# ── 4. Blend star rating with sentiment rating ────────────────────────────────
+#   enhanced_rating = α * overall + (1 − α) * sentiment_rating
+
+ALPHA = 0.6   # 60% trust in star rating, 40% in sentiment
+
+df["enhanced_rating"] = (
+    ALPHA * df["overall"] + (1 - ALPHA) * df["sentiment_rating"]
+).clip(1, 5)
+
+print("\nSample of enhanced ratings:")
+print(df[["overall", "vader_compound", "sentiment_rating", "enhanced_rating"]].head(10).to_string(index=False))
+
+# ── 5. Descriptive statistics ─────────────────────────────────────────────────
+
+print("\n========== Descriptive Statistics ==========")
+print("\nOriginal Rating (overall):")
+print(df["overall"].describe())
+print("\nSentiment Rating (VADER rescaled):")
+print(df["sentiment_rating"].describe())
+print("\nEnhanced Rating (blended):")
+print(df["enhanced_rating"].describe())
+
+mae_orig_to_enhanced = mean_absolute_error(df["overall"], df["enhanced_rating"])
+print(f"\nMAE between original and enhanced ratings: {mae_orig_to_enhanced:.4f}")
+
+# ── 6. Visualisations ─────────────────────────────────────────────────────────
+
+# ── 6a. Distribution comparison (KDE) ────────────────────────────────────────
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=False)
+
+axes[0].hist(df["overall"], bins=5, range=(0.5, 5.5), color="#3498db", edgecolor="black", alpha=0.8)
+axes[0].set_title("Original Star Ratings", fontsize=13, fontweight="bold")
+axes[0].set_xlabel("Rating")
+axes[0].set_ylabel("Count")
+axes[0].set_xticks([1, 2, 3, 4, 5])
+
+axes[1].hist(df["sentiment_rating"], bins=40, color="#e74c3c", edgecolor="black", alpha=0.8)
+axes[1].set_title("VADER Sentiment Ratings\n(rescaled to [1, 5])", fontsize=13, fontweight="bold")
+axes[1].set_xlabel("Rating")
+
+axes[2].hist(df["enhanced_rating"], bins=40, color="#2ecc71", edgecolor="black", alpha=0.8)
+axes[2].set_title(f"Enhanced Ratings\n(α={ALPHA} blend)", fontsize=13, fontweight="bold")
+axes[2].set_xlabel("Rating")
+
+plt.suptitle("Rating Distribution: Original vs. Sentiment vs. Enhanced", fontsize=14, fontweight="bold")
+plt.tight_layout()
+plt.show()
+
+# ── 6b. KDE overlay ──────────────────────────────────────────────────────────
+
+plt.figure(figsize=(10, 5))
+sns.kdeplot(df["overall"],           label="Original",  fill=True, alpha=0.3, color="#3498db")
+sns.kdeplot(df["sentiment_rating"],  label="Sentiment", fill=True, alpha=0.3, color="#e74c3c")
+sns.kdeplot(df["enhanced_rating"],   label="Enhanced",  fill=True, alpha=0.3, color="#2ecc71")
+plt.title("KDE: Original vs. Sentiment vs. Enhanced Rating", fontsize=13, fontweight="bold")
+plt.xlabel("Rating value")
+plt.ylabel("Density")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# ── 6c. Scatter — original vs. enhanced ──────────────────────────────────────
+
+plt.figure(figsize=(7, 6))
+plt.scatter(df["overall"], df["enhanced_rating"], alpha=0.05, s=10, color="#8e44ad")
+plt.plot([1, 5], [1, 5], "r--", lw=1.5, label="No change line")
+plt.title("Original vs. Enhanced Rating", fontsize=13, fontweight="bold")
+plt.xlabel("Original Star Rating")
+plt.ylabel("Enhanced Rating")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# ── 6d. Disagreement analysis ─────────────────────────────────────────────────
+#   Cases where |enhanced − original| > 1.5  →  text strongly contradicts star
+
+THRESHOLD = 1.5
+df["disagreement"] = (df["enhanced_rating"] - df["overall"]).abs()
+high_disagree = df[df["disagreement"] > THRESHOLD]
+
+print(f"\n========== High-Disagreement Cases (|enhanced − original| > {THRESHOLD}) ==========")
+print(f"Number of high-disagreement reviews: {len(high_disagree)} "
+      f"({len(high_disagree)/len(df)*100:.2f}% of total)")
+
+print("\nSample high-disagreement reviews:")
+cols = ["overall", "sentiment_rating", "enhanced_rating", "disagreement", "combined_text"]
+sample_hd = high_disagree.sort_values("disagreement", ascending=False).head(5)
+for _, row in sample_hd.iterrows():
+    print(f"\n  Star={row['overall']:.0f}  |  Sentiment={row['sentiment_rating']:.2f}"
+          f"  |  Enhanced={row['enhanced_rating']:.2f}"
+          f"  |  Diff={row['disagreement']:.2f}")
+    print(f"  Text: {row['combined_text'][:120]}...")
+
+# Disagreement histogram
+plt.figure(figsize=(9, 5))
+plt.hist(df["disagreement"], bins=40, color="#e67e22", edgecolor="black", alpha=0.8)
+plt.axvline(THRESHOLD, color="red", linestyle="--", label=f"Threshold = {THRESHOLD}")
+plt.title("Distribution of |Enhanced − Original| Rating Differences", fontsize=13, fontweight="bold")
+plt.xlabel("|Enhanced − Original|")
+plt.ylabel("Count")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# ── 7. Sentiment-label accuracy comparison ────────────────────────────────────
+#   Convert both original and enhanced ratings to Pos/Neutral/Neg labels
+#   and compare them to the VADER-predicted sentiment label.
+
+def rating_to_label(r):
+    if r >= 3.5:
+        return "Positive"
+    elif r >= 2.5:
+        return "Neutral"
+    else:
+        return "Negative"
+
+def vader_label(compound):
+    if compound >= 0.05:
+        return "Positive"
+    elif compound <= -0.05:
+        return "Negative"
+    else:
+        return "Neutral"
+
+df["label_original"] = df["overall"].apply(rating_to_label)
+df["label_enhanced"] = df["enhanced_rating"].apply(rating_to_label)
+df["label_vader"]    = df["vader_compound"].apply(vader_label)
+
+# Use VADER label as the "ground truth" for this comparison
+y_true  = df["label_vader"]
+y_orig  = df["label_original"]
+y_enh   = df["label_enhanced"]
+
+acc_orig = accuracy_score(y_true, y_orig)
+acc_enh  = accuracy_score(y_true, y_enh)
+
+print("\n========== Label Accuracy vs. VADER Sentiment (full dataset) ==========")
+print(f"Original rating label accuracy : {acc_orig:.4f}")
+print(f"Enhanced rating label accuracy : {acc_enh:.4f}")
+print(f"Improvement                    : {acc_enh - acc_orig:+.4f}")
+
+print("\n--- Original rating labels (vs VADER) ---")
+print(classification_report(y_true, y_orig, zero_division=0))
+
+print("\n--- Enhanced rating labels (vs VADER) ---")
+print(classification_report(y_true, y_enh, zero_division=0))
+
+# Bar chart — accuracy comparison
+plt.figure(figsize=(7, 5))
+bars = plt.bar(["Original Rating\nLabels", "Enhanced Rating\nLabels"],
+               [acc_orig, acc_enh],
+               color=["#3498db", "#2ecc71"], edgecolor="black", alpha=0.85)
+for bar, acc in zip(bars, [acc_orig, acc_enh]):
+    plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.005,
+             f"{acc:.4f}", ha="center", va="bottom", fontsize=12, fontweight="bold")
+plt.ylim(0, 1)
+plt.ylabel("Accuracy (vs VADER label)", fontsize=12)
+plt.title("Sentiment Label Accuracy:\nOriginal vs. Enhanced Ratings", fontsize=13, fontweight="bold")
+plt.grid(axis="y", linestyle="--", alpha=0.4)
+plt.tight_layout()
+plt.show()
+
+# ── 8. Sensitivity analysis — vary α ─────────────────────────────────────────
+#   Show how accuracy and MAE change across different blending weights.
+
+alphas     = np.arange(0.0, 1.05, 0.1)
+acc_values = []
+mae_values = []
+
+for a in alphas:
+    enh = (a * df["overall"] + (1 - a) * df["sentiment_rating"]).clip(1, 5)
+    lbl = enh.apply(rating_to_label)
+    acc_values.append(accuracy_score(y_true, lbl))
+    mae_values.append(mean_absolute_error(df["overall"], enh))
+
+fig, ax1 = plt.subplots(figsize=(10, 5))
+color_acc = "#2ecc71"
+color_mae = "#e74c3c"
+
+ax1.plot(alphas, acc_values, "o-", color=color_acc, linewidth=2, label="Accuracy (vs VADER)")
+ax1.set_xlabel("α  (weight of original star rating)", fontsize=12)
+ax1.set_ylabel("Accuracy", fontsize=12, color=color_acc)
+ax1.tick_params(axis="y", labelcolor=color_acc)
+ax1.axvline(ALPHA, color="navy", linestyle="--", label=f"Chosen α = {ALPHA}")
+
+ax2 = ax1.twinx()
+ax2.plot(alphas, mae_values, "s--", color=color_mae, linewidth=2, label="MAE (enhanced vs original)")
+ax2.set_ylabel("MAE", fontsize=12, color=color_mae)
+ax2.tick_params(axis="y", labelcolor=color_mae)
+
+lines1, labels1 = ax1.get_legend_handles_labels()
+lines2, labels2 = ax2.get_legend_handles_labels()
+ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right")
+
+plt.title("Sensitivity Analysis: Accuracy & MAE vs. α", fontsize=13, fontweight="bold")
+plt.tight_layout()
+plt.show()
+
+# ── 9. Save the enhanced dataset ──────────────────────────────────────────────
+
+output_cols = ["reviewerID", "asin", "overall", "sentiment_rating",
+               "enhanced_rating", "disagreement", "combined_text"]
+df[output_cols].to_csv(os.path.join(BASE_DIR, "dataset_enhanced_ratings.csv"), index=False)
+print("\nEnhanced dataset saved to 'dataset_enhanced_ratings.csv'")
+
+# ── 10. Summary table ─────────────────────────────────────────────────────────
+
+print("\n========== Final Summary ==========")
+summary = pd.DataFrame({
+    "Metric"   : ["Mean", "Std Dev", "Min", "Max", "Label Accuracy vs VADER"],
+    "Original" : [df["overall"].mean(), df["overall"].std(),
+                  df["overall"].min(), df["overall"].max(), f"{acc_orig:.4f}"],
+    "Enhanced" : [df["enhanced_rating"].mean(), df["enhanced_rating"].std(),
+                  df["enhanced_rating"].min(), df["enhanced_rating"].max(), f"{acc_enh:.4f}"],
+})
+print(summary.to_string(index=False))
+
+print("\nDone. All plots displayed.")
