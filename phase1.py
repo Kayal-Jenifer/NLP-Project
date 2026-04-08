@@ -1197,7 +1197,95 @@ try:
         print("\nGenerated 50-word Summary:")
         print(row["task16_summary"])
         print(f"Word count: {len(str(row['task16_summary']).split())}")
-        print("\n" + "=" * 100)
-    
+
+    print("\n#################################### LLM customer-service response ########################################\n")
+
+    # Find reviews that look like actual customer questions
+    question_reviews_q17 = df[
+        df["reviewText"].str.contains(r"\?", regex=True, na=False)
+    ].copy()
+
+    # Narrow it down to reviews that sound like real customer questions
+    question_reviews_q17 = question_reviews_q17[
+        question_reviews_q17["reviewText"].str.contains(
+            r"can i|can this|does this|how do i|is this|will this|should i|why|what|where|when",
+            case=False,
+            regex=True,
+            na=False
+        )
+    ].copy()
+
+    # Remove duplicates
+    question_reviews_q17 = question_reviews_q17.drop_duplicates(subset=["reviewText"])
+
+    # Keep only reviews with some useful length
+    question_reviews_q17["review_length_q17"] = question_reviews_q17["reviewText"].apply(lambda x: len(str(x).split()))
+    question_reviews_q17 = question_reviews_q17[question_reviews_q17["review_length_q17"] >= 10]
+
+    print("Question-style reviews found:", len(question_reviews_q17))
+
+    if len(question_reviews_q17) == 0:
+        print("No suitable question-style review found")
+    else:
+        # Pick one review
+        question_review = question_reviews_q17.iloc[0]
+        selected_question_text = question_review["reviewText"]
+
+        print("\nSelected Question Review:")
+        print(selected_question_text)
+
+        # Ask the model to act like a service representative
+        response_prompt = f"""
+You are a customer service representative for an online store.
+
+Write a polite, helpful, and professional response to the customer review below.
+
+Rules:
+- answer the customer's question clearly
+- sound professional and respectful
+- keep the response short
+- do not promise refunds or replacements unless mentioned
+- do not invent details not in the review
+
+Customer review:
+{selected_question_text}
+
+Customer service response:
+"""
+
+        task17_response = llm_generate(
+            response_prompt,
+            max_input_tokens=384,
+            max_new_tokens=80
+        ).strip()
+
+        # Fallback if output is too weak
+        bad_responses = ["", ".", "..", "...", "five stars"]
+
+        if task17_response.lower() in bad_responses or len(task17_response.split()) < 8:
+            fallback_prompt = f"""
+Reply politely to this customer review as a customer service representative.
+Answer the question briefly and clearly.
+
+Review:
+{selected_question_text}
+
+Response:
+"""
+            task17_response = llm_generate(
+                fallback_prompt,
+                max_input_tokens=256,
+                max_new_tokens=80
+            ).strip()
+
+        print("\nGenerated Customer-Service Response:")
+        print(task17_response)
+
+        # Save the selected review and generated response if you want to reference it later
+        q17_result = {
+            "review": selected_question_text,
+            "response": task17_response
+        }
+        
 except Exception as e:
     print("Error loading or using the LLM model:", str(e))
