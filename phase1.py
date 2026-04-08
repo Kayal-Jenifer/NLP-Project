@@ -1076,3 +1076,128 @@ summary = pd.DataFrame({
 print(summary.to_string(index=False))
 
 print("\nDone. All plots displayed.")
+
+print("\n#################################### q.16 & q.17 Hugging Face LLM Tasks ########################################\n")
+try:
+    import torch
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+    # Load a locally hosted Hugging Face model
+    model_name = "google/flan-t5-small"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    llm_model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    llm_model.to(device)
+
+    print(f"LLM loaded successfully from: {model_name}")
+    print(f"Using device: {device}")
+
+    # Helper function: generate text from the local LLM
+    def llm_generate(prompt, max_input_tokens=512, max_new_tokens=100):
+        inputs = tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_input_tokens
+        )
+
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            outputs = llm_model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False  # deterministic output for reproducibility
+            )
+
+        result = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        result = re.sub(r"\s+", " ", result).strip()
+        return result
+
+    # Returns 50 words by using the model output 
+    # otherwise falling back to the review excerpt.
+    def make_50_word_summary(generated_text, fallback_text):
+        generated_words = str(generated_text).split()
+        if len(generated_words) < 15 or str(generated_text).strip(". ") == "":
+            generated_words = str(fallback_text).split()
+        return " ".join(generated_words[:50])
+
+    def first_sentences(text, n=4):
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", str(text)) if s.strip()]
+        return " ".join(sentences[:n])
+    
+    print("\n#################################### LLM summarization ########################################\n")
+
+    # Select 10 reviews longer than 100 words and summarize them (original reviewText)
+    df["reviewText"] = df["reviewText"].fillna("").astype(str)
+    df["summary"] = df["summary"].fillna("").astype(str)
+
+    # Recalculate review length directly from original reviewText
+    df["review_length_q16"] = df["reviewText"].apply(lambda x: len(x.split()))
+
+    # Select reviews with more than 100 words
+    long_reviews_q16 = df[df["review_length_q16"] > 100].copy()
+
+    # Remove duplicates so repeated reviews are not selected
+    long_reviews_q16 = long_reviews_q16.drop_duplicates(subset=["reviewText"])
+
+    # Take 10 reviews randomly for reproducibility
+    q16_df = long_reviews_q16.sample(n=min(10, len(long_reviews_q16)), random_state=42).copy()
+
+    print("Selected reviews:", len(q16_df))
+    
+    # display the selected 10 reviews with their lengths
+    print("\nSelected reviews and their lengths:")
+    for idx, row in q16_df.iterrows():
+        print(f"Review {idx+1}: Length = {row['review_length_q16']} words")
+
+    q16_summaries = []
+
+    for idx, row in q16_df.iterrows():
+        original_review = row["reviewText"]
+        review_excerpt = first_sentences(original_review, n=4)
+
+        # flan-t5-small works better on shorter excerpts than full long reviews.
+        prompt = f"""
+        Summarize the following customer product review in about 50 words.
+        Keep the key positives, negatives, and overall opinion.
+        Write in clear and simple English.
+        Do not write only a star rating.
+        Do not write ellipsis.
+
+        Review excerpt:
+        {review_excerpt}
+
+        Summary:
+        """
+        generated_summary = llm_generate(
+            prompt,
+            max_input_tokens=256,
+            max_new_tokens=80
+        )
+
+        generated_summary = make_50_word_summary(generated_summary, review_excerpt)
+        q16_summaries.append(generated_summary)
+
+    q16_df["task16_summary"] = q16_summaries
+
+    # Print first 2 results
+    print("\n==================== FIRST TWO RESULTS ====================")
+    for i in range(min(2, len(q16_df))):
+        row = q16_df.iloc[i]
+        print(f"\nReview {i+1}")
+        print(f"ASIN: {row['asin']}")
+        print(f"Rating: {row['overall']}")
+        print(f"Review Length: {row['review_length_q16']} words")
+
+        print("\nOriginal Review:")
+        print(row["reviewText"][:1000], "...")
+
+        print("\nGenerated 50-word Summary:")
+        print(row["task16_summary"])
+        print(f"Word count: {len(str(row['task16_summary']).split())}")
+        print("\n" + "=" * 100)
+    
+except Exception as e:
+    print("Error loading or using the LLM model:", str(e))
