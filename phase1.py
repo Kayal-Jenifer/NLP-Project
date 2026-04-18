@@ -1080,12 +1080,14 @@ print("\nDone. All plots displayed.")
 print("\n#################################### q.16 & q.17 Hugging Face LLM Tasks ########################################\n")
 try:
     import torch
-    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+    import html
+    from transformers import AutoTokenizer, AutoModelForCausalLM
 
-    # Load a locally hosted Hugging Face model
-    model_name = "google/flan-t5-small"
+    # Load the Hugging Face model 
+    model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    llm_model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    llm_model = AutoModelForCausalLM.from_pretrained(model_name)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     llm_model.to(device)
@@ -1093,10 +1095,79 @@ try:
     print(f"LLM loaded successfully from: {model_name}")
     print(f"Using device: {device}")
 
-    # Helper function: generate text from the local LLM
-    def llm_generate(prompt, max_input_tokens=512, max_new_tokens=100):
+    # Cleaning the llm generated text 
+    def clean_generated_text(text):
+        text = html.unescape(str(text))
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    # Clean the review text before sending to the LLM
+    def clean_review_text(text):
+        text = str(text)
+        text = html.unescape(text)
+        text = re.sub(r"<a[^>]*>.*?</a>", " ", text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"http\S+", " ", text)
+        text = re.sub(r"www\.\S+", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    # Word count to check review length
+    def word_count(text):
+        return len(str(text).split())
+
+    # Quality check of generated summary 
+    def is_too_extractive(summary_text, review_text):
+        summary_words = re.findall(r"\b\w+\b", str(summary_text).lower())
+        review_opening_words = re.findall(r"\b\w+\b", str(review_text).lower())[:120]
+
+        if len(summary_words) < 15:
+            return True 
+
+        overlap = sum(1 for w in summary_words if w in review_opening_words)
+        ratio = overlap / max(len(summary_words), 1)
+        return ratio > 0.75
+
+    # Summary length control to ensure it is around 50 words and not too short  
+    def make_50_word_summary(generated_text, fallback_text):
+        generated_words = str(generated_text).split()
+
+        if len(generated_words) < 20 or str(generated_text).strip(". ") == "":
+            generated_words = str(fallback_text).split()
+
+        if len(generated_words) <= 50:
+            return " ".join(generated_words)
+
+        return " ".join(generated_words[:50])
+
+    # Qwen LLM generation (chat/instruct model)
+    def llm_generate(prompt, max_input_tokens=700, max_new_tokens=120):
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful AI assistant. "
+                    "Follow the instructions exactly. "
+                    "Do not copy long parts of the input unless necessary. "
+                    "Write clear and useful outputs."
+                )
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+        
+        # Convert messages to the format expected by the tokenizer
+        input_text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+
+        # Tokenized tensor input for the model
         inputs = tokenizer(
-            prompt,
+            input_text,
             return_tensors="pt",
             truncation=True,
             max_length=max_input_tokens
@@ -1104,81 +1175,125 @@ try:
 
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
+        # Generate output with the model
         with torch.no_grad():
             outputs = llm_model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=False  # deterministic output for reproducibility
+                do_sample=False,
+                pad_token_id=tokenizer.eos_token_id
             )
-
-        result = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        result = re.sub(r"\s+", " ", result).strip()
+        generated_ids = outputs[0][inputs["input_ids"].shape[1]:]
+        result = tokenizer.decode(generated_ids, skip_special_tokens=True)
+        result = clean_generated_text(result)
         return result
 
-    # Returns 50 words by using the model output 
-    # otherwise falling back to the review excerpt.
-    def make_50_word_summary(generated_text, fallback_text):
-        generated_words = str(generated_text).split()
-        if len(generated_words) < 15 or str(generated_text).strip(". ") == "":
-            generated_words = str(fallback_text).split()
-        return " ".join(generated_words[:50])
-
-    def first_sentences(text, n=4):
-        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", str(text)) if s.strip()]
-        return " ".join(sentences[:n])
-    
     print("\n#################################### LLM summarization ########################################\n")
 
-    # Select 10 reviews longer than 100 words and summarize them (original reviewText)
+    # Select 10 reviews > 100 words
     df["reviewText"] = df["reviewText"].fillna("").astype(str)
     df["summary"] = df["summary"].fillna("").astype(str)
 
-    # Recalculate review length directly from original reviewText
+    # Column to store review length
     df["review_length_q16"] = df["reviewText"].apply(lambda x: len(x.split()))
 
-    # Select reviews with more than 100 words
     long_reviews_q16 = df[df["review_length_q16"] > 100].copy()
-
-    # Remove duplicates so repeated reviews are not selected
     long_reviews_q16 = long_reviews_q16.drop_duplicates(subset=["reviewText"])
-
-    # Take 10 reviews randomly for reproducibility
     q16_df = long_reviews_q16.sample(n=min(10, len(long_reviews_q16)), random_state=42).copy()
 
     print("Selected reviews:", len(q16_df))
-    
-    # display the selected 10 reviews with their lengths
     print("\nSelected reviews and their lengths:")
     for idx, row in q16_df.iterrows():
         print(f"Review {idx+1}: Length = {row['review_length_q16']} words")
 
-    q16_summaries = []
 
-    for idx, row in q16_df.iterrows():
-        original_review = row["reviewText"]
-        review_excerpt = first_sentences(original_review, n=4)
+    # Few-shot prompting for summarization
+    summary_few_shot = """
+Example 1
+Review:
+The product arrived on time and was packed well. It works properly for normal use and feels sturdy. However, the setup instructions were confusing and installation took longer than expected. Overall, it is useful and gives fair value for the price.
 
-        # flan-t5-small works better on shorter excerpts than full long reviews.
+Summary:
+The reviewer says the product arrived on time, was packed well, and works reliably for normal use. It feels sturdy and gives fair value for the price. However, the setup instructions were unclear, which made installation harder and more time-consuming than expected.
+
+Example 2
+Review:
+The glue worked on wood and paper, and the bottle was easy to handle. However, it produced too much foam, became messy during use, and failed to bond plastic properly. I would only use it for small, non-critical projects.
+
+Summary:
+The reviewer found the glue useful for wood and paper and liked the easy-to-use bottle. However, it foamed excessively, created a mess, and did not work well on plastic. Overall, it may only be suitable for small, non-critical projects.
+"""
+
+    # Summarization logic
+    def summarize_review(original_review):
+        clean_text = clean_review_text(original_review)
+
+        # summary prompt
         prompt = f"""
-        Summarize the following customer product review in about 50 words.
-        Keep the key positives, negatives, and overall opinion.
-        Write in clear and simple English.
-        Do not write only a star rating.
-        Do not write ellipsis.
+You are summarizing a customer product review.
 
-        Review excerpt:
-        {review_excerpt}
+{summary_few_shot}
 
-        Summary:
-        """
+Now summarize the review below in about 50 words.
+
+Rules:
+- Write in clear and simple English.
+- Mention the key positives, negatives, and overall opinion.
+- Do not copy the opening lines directly.
+- Do not write only one sentence fragment.
+- Do not use bullet points.
+- Try to keep it close to 50 words.
+
+Review:
+{clean_text}
+
+Summary:
+"""
         generated_summary = llm_generate(
             prompt,
-            max_input_tokens=256,
-            max_new_tokens=80
+            max_input_tokens=700,
+            max_new_tokens=120
         )
 
-        generated_summary = make_50_word_summary(generated_summary, review_excerpt)
+        # Retry with stronger prompt if output looks too extractive
+        if is_too_extractive(generated_summary, clean_text):
+            retry_prompt = f"""
+You are summarizing a customer product review.
+
+{summary_few_shot}
+
+Write a new summary in about 50 words.
+
+Important:
+- Do NOT copy the first lines of the review.
+- Rewrite the ideas in your own words.
+- Mention the main positives, negatives, and overall opinion.
+- Use simple English.
+- Do not use ellipsis.
+- Do not repeat review sentences.
+
+Review:
+{clean_text}
+
+Better summary:
+"""
+            generated_summary = llm_generate(
+                retry_prompt,
+                max_input_tokens=700,
+                max_new_tokens=120
+            )
+
+        # final fallback
+        generated_summary = make_50_word_summary(generated_summary, "")
+        return generated_summary
+    
+    # Generate summaries for all 10 reviews
+    q16_summaries = []
+    for idx, row in enumerate(q16_df.itertuples(), start=1):
+        print(f"\nSummarizing review {idx}/{len(q16_df)} ...")
+        generated_summary = summarize_review(row.reviewText)
         q16_summaries.append(generated_summary)
+        print("Done.")
 
     q16_df["task16_summary"] = q16_summaries
 
@@ -1196,16 +1311,15 @@ try:
 
         print("\nGenerated 50-word Summary:")
         print(row["task16_summary"])
-        print(f"Word count: {len(str(row['task16_summary']).split())}")
+        print(f"Word count: {word_count(row['task16_summary'])}")
 
     print("\n#################################### LLM customer-service response ########################################\n")
 
-    # Find reviews that look like actual customer questions
+    # Find question-type reviews
     question_reviews_q17 = df[
         df["reviewText"].str.contains(r"\?", regex=True, na=False)
     ].copy()
 
-    # Narrow it down to reviews that sound like real customer questions
     question_reviews_q17 = question_reviews_q17[
         question_reviews_q17["reviewText"].str.contains(
             r"can i|can this|does this|how do i|is this|will this|should i|why|what|where|when",
@@ -1215,77 +1329,168 @@ try:
         )
     ].copy()
 
-    # Remove duplicates
     question_reviews_q17 = question_reviews_q17.drop_duplicates(subset=["reviewText"])
-
-    # Keep only reviews with some useful length
     question_reviews_q17["review_length_q17"] = question_reviews_q17["reviewText"].apply(lambda x: len(str(x).split()))
-    question_reviews_q17 = question_reviews_q17[question_reviews_q17["review_length_q17"] >= 10]
+    question_reviews_q17 = question_reviews_q17[question_reviews_q17["review_length_q17"] >= 10].copy()
 
     print("Question-style reviews found:", len(question_reviews_q17))
 
     if len(question_reviews_q17) == 0:
         print("No suitable question-style review found")
     else:
-        # Pick one review
-        question_review = question_reviews_q17.iloc[0]
-        selected_question_text = question_review["reviewText"]
+        # Choosing cleaner and shorter question reviews 
+        question_reviews_q17 = question_reviews_q17.sort_values("review_length_q17").copy()
+        selected_question_text = None
+        selected_reviewer_id = None
+        selected_asin = None
+        selected_review_length = None
+
+        # Try to pick a cleaner question-style review
+        for review_idx, row in question_reviews_q17.iterrows():
+            candidate_raw = row["reviewText"]
+            candidate_clean = clean_review_text(candidate_raw)
+
+            # Skip if too long, too noisy, or no question mark after cleaning
+            if len(candidate_clean.split()) > 120:
+                continue
+            if candidate_clean.count("?") == 0:
+                continue
+            if len(candidate_clean.strip()) < 20:
+                continue
+
+            selected_question_text = candidate_clean
+            selected_reviewer_id = row["reviewerID"]
+            selected_asin = row["asin"]
+            selected_review_length = row["review_length_q17"]
+            break
+
+        # Fallback if no shorter clean one found
+        if selected_question_text is None:
+            question_review = question_reviews_q17.iloc[0]
+            selected_question_text_raw = question_review["reviewText"]
+            selected_question_text = clean_review_text(selected_question_text_raw)
+
+            selected_reviewer_id = question_review["reviewerID"]
+            selected_asin = question_review["asin"]
+            selected_review_length = question_review["review_length_q17"]
+
+        print(f"\nSelected Reviewer ID: {selected_reviewer_id}")
+        print(f"Selected Product ASIN: {selected_asin}")
+        print(f"Selected Review Length: {selected_review_length} words")
 
         print("\nSelected Question Review:")
         print(selected_question_text)
 
-        # Ask the model to act like a service representative
+        # Few-shot prompting for customer service reply
+        reply_few_shot = """
+    Example 1
+    Customer review:
+    Does this product work with a MacBook? I am not sure before buying.
+
+    Customer service response:
+    Thank you for your question. Compatibility may depend on the exact model and connection type, so please check the product specifications carefully before purchasing. If needed, the seller or manufacturer may help confirm whether it is suitable for your device.
+
+    Example 2
+    Customer review:
+    Why is the glue foaming so much, and is that normal?
+
+    Customer service response:
+    Thank you for sharing your concern. Some adhesive products may foam during application depending on the material and usage conditions. Please follow the instructions carefully and test it on a small area first to check whether it is suitable for your project.
+    """
+
+        # Builds the customer service prompt
         response_prompt = f"""
-You are a customer service representative for an online store.
+    You are a customer service representative for an online store.
 
-Write a polite, helpful, and professional response to the customer review below.
+    {reply_few_shot}
 
-Rules:
-- answer the customer's question clearly
-- sound professional and respectful
-- keep the response short
-- do not promise refunds or replacements unless mentioned
-- do not invent details not in the review
+    Now write a response to the customer review below.
 
-Customer review:
-{selected_question_text}
+    Rules:
+    - Write exactly 2 or 3 full sentences.
+    - Start by thanking the customer for the feedback or question.
+    - Answer the customer's concern clearly and politely.
+    - Sound professional and respectful.
+    - Use simple English.
+    - Do not argue with the customer.
+    - Do not say things like "I have never heard of this" or "far as I can tell".
+    - Do not promise refunds or replacements unless they are clearly mentioned.
+    - Do not invent technical details not present in the review.
+    - Do not copy the customer review.
 
-Customer service response:
-"""
+    Customer review:
+    {selected_question_text}
+
+    Customer service response:
+    """
 
         task17_response = llm_generate(
             response_prompt,
-            max_input_tokens=384,
-            max_new_tokens=80
+            max_input_tokens=700,
+            max_new_tokens=120
         ).strip()
 
-        # Fallback if output is too weak
-        bad_responses = ["", ".", "..", "...", "five stars"]
+        # Bad outputs to reject
+        bad_phrases = [
+            "i have never heard of this",
+            "i have read some reviews",
+            "far as i can tell",
+            "i'm not even sure",
+            "i am not even sure",
+            "i have never seen",
+            "i have never heard",
+            "bonding wood together"
+        ]
 
-        if task17_response.lower() in bad_responses or len(task17_response.split()) < 8:
+        # Retry if it copies the review, is too short, or sounds unprofessional
+        if (
+            task17_response.lower() in ["", ".", "..", "...", "five stars"]
+            or len(task17_response.split()) < 12
+            or is_too_extractive(task17_response, selected_question_text)
+            or any(bp in task17_response.lower() for bp in bad_phrases)
+        ):
+
             fallback_prompt = f"""
-Reply politely to this customer review as a customer service representative.
-Answer the question briefly and clearly.
+    You are a professional customer service representative.
 
-Review:
-{selected_question_text}
+    Write a clean customer-service reply to the review below.
 
-Response:
-"""
+    Rules:
+    - Write 2 to 3 full sentences only.
+    - Start by thanking the customer for the feedback.
+    - Politely acknowledge the issue or concern.
+    - Suggest checking instructions, usage guidance, or contacting the seller/manufacturer for further help if needed.
+    - Use simple English.
+    - Sound professional and helpful.
+    - Do not repeat the review.
+    - Do not copy customer words.
+    - Do not include HTML, links, or random opinions.
+    - Do not say "I have never heard of this" or similar phrases.
+
+    Customer review:
+    {selected_question_text}
+
+    Professional response:
+    """
             task17_response = llm_generate(
                 fallback_prompt,
-                max_input_tokens=256,
-                max_new_tokens=80
+                max_input_tokens=700,
+                max_new_tokens=120
             ).strip()
+
+        # Final cleanup: if still too long, keep only first 3 sentences
+        response_sentences = [
+            s.strip() for s in re.split(r"(?<=[.!?])\s+", task17_response) if s.strip()
+        ]
+        if len(response_sentences) > 3:
+            task17_response = " ".join(response_sentences[:3])
 
         print("\nGenerated Customer-Service Response:")
         print(task17_response)
 
-        # Save the selected review and generated response if you want to reference it later
         q17_result = {
             "review": selected_question_text,
             "response": task17_response
         }
-        
 except Exception as e:
-    print("Error loading or using the LLM model:", str(e))
+    print("Error during LLM processing:", str(e))
