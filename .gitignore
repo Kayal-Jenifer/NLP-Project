@@ -1,6 +1,7 @@
-.venv/
-venv/
+.venv312/
+venv312/
 __pycache__/
 .DS_Store
 .csv
 .cache
+.env

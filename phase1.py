@@ -1485,7 +1485,7 @@ Better summary:
         if len(response_sentences) > 3:
             task17_response = " ".join(response_sentences[:3])
 
-        print("\nGenerated Customer-Service Response:")
+        print("\nGenerated Customer-Service Response: (Qwen/Qwen2.5-0.5B-Instruct)")
         print(task17_response)
 
         q17_result = {
@@ -1494,3 +1494,62 @@ Better summary:
         }
 except Exception as e:
     print("Error during LLM processing:", str(e))
+    
+import requests
+import json
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+models = [
+    "qwen/qwen-2.5-7b-instruct",
+    "google/gemma-4-26b-a4b-it",
+    "meta-llama/llama-3-8b-instruct"
+]
+
+prompt = """
+You are a professional customer service representative.
+
+Write a short customer-service response to the review below.
+
+Rules:
+- Write 2 to 3 sentences.
+- Thank the customer.
+- Be polite and professional.
+- Address the issue clearly.
+- Do not repeat the review.
+- Do not make unrealistic promises.
+
+Customer review:
+Great set, but why the empty hole??? Missing a weight!
+
+Customer service response:
+"""
+
+for model in models:
+    response = requests.post(
+        url="https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        data=json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ]
+        })
+    )
+
+    result = response.json()
+
+    print("\n" + "="*80)
+    print("MODEL:", model)
+
+    try:
+        reply = result["choices"][0]["message"]["content"]
+        print(reply)
+    except:
+        print("Error:", result)
